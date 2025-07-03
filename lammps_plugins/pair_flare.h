@@ -22,6 +22,7 @@ public:
   PairFLARE(class LAMMPS *);
   virtual ~PairFLARE();
   virtual void compute(int, int);
+  double compute_atomic_energy(int, NeighList *) override;
   void settings(int, char **);
   virtual void coeff(int, char **);
   virtual void init_style();

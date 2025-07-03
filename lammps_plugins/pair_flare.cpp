@@ -43,6 +43,7 @@ get_timestamp ()
 PairFLARE::PairFLARE(LAMMPS *lmp) : Pair(lmp) {
   restartinfo = 0;
   manybody_flag = 1;
+  atomic_energy_enable = 1;
 
   beta = NULL;
 }
@@ -182,6 +183,69 @@ void PairFLARE::compute(int eflag, int vflag) {
   if (vflag_fdotr)
     virial_fdotr_compute();
 }
+
+/* ----------------------------------------------------------------------
+   calculate the atomic energy of atom i for fix sgcmc
+------------------------------------------------------------------------- */
+double PairFLARE::compute_atomic_energy(int i, NeighList *neighborList)
+{
+  int j, jj, jnum, itype, n_inner;
+  double evdwl, delx, dely, delz, xtmp, ytmp, ztmp, rsq;
+  int *jlist, *numneigh, **firstneigh;
+
+  evdwl = 0.0;
+
+  double **x = atom->x;
+  int *type = atom->type;
+
+  numneigh = neighborList->numneigh;
+  firstneigh = neighborList->firstneigh;
+
+  double B2_norm_squared;
+  Eigen::VectorXd single_bond_vals, B2_vals, u;
+  Eigen::MatrixXd single_bond_env_dervs;
+
+  itype = type[i];
+  jnum = numneigh[i];
+  xtmp = x[i][0];
+  ytmp = x[i][1];
+  ztmp = x[i][2];
+  jlist = firstneigh[i];
+
+  // Count the atoms inside the cutoff.
+  n_inner = 0;
+  for (int jj = 0; jj < jnum; jj++) {
+    j = jlist[jj];
+    int s = type[j] - 1;
+    double cutoff_val = cutoff_matrix(itype-1, s);
+
+    delx = x[j][0] - xtmp;
+    dely = x[j][1] - ytmp;
+    delz = x[j][2] - ztmp;
+    rsq = delx * delx + dely * dely + delz * delz;
+    if (rsq < (cutoff_val * cutoff_val))
+      n_inner++;
+  }
+
+  // Compute covariant descriptors.
+  double secs;
+  single_bond_multiple_cutoffs(x, type, jnum, n_inner, i, xtmp, ytmp, ztmp,
+                                jlist, basis_function, cutoff_function,
+                                n_species, n_max, l_max, radial_hyps,
+                                cutoff_hyps, single_bond_vals,
+                                single_bond_env_dervs, cutoff_matrix);
+
+  // Compute invariant descriptors.
+  B2_descriptor(B2_vals, B2_norm_squared,
+                single_bond_vals, n_species, n_max, l_max);
+
+  compute_energy_and_u(B2_vals, B2_norm_squared, single_bond_vals, power,
+          n_species, n_max, l_max, beta_matrices[itype - 1], u, &evdwl, normalized);
+
+  return evdwl;
+  
+}
+
 
 /* ----------------------------------------------------------------------
    allocate all arrays
