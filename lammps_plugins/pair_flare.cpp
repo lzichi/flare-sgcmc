@@ -197,15 +197,20 @@ double PairFLARE::compute_atomic_energy(int i, NeighList *neighborList)
   evdwl = 0.0;
 
   printf("HELLO! inside compute atomic energy \n");
+  if(comp_unc == nullptr) {
+    comp_unc = modify->get_compute_by_id("unc");
+  }
+  
+  double unc = comp_unc->compute_single_atom_unc(i);
 
-  comp_unc = modify->get_compute_by_id("ComputeFlareStdAtom");
-  comp_unc->compute_peratom();
+  if(atom->type[i] != 1) {
+    printf("unc: %g, type %d", unc, atom->type[i]);
+  }
 
-  if(comp_unc->vector_atom[i] > 0.02) {
+  if(unc > 0.02) {
     error->all(FLERR, "Too high of uncertainty!");
   }
   
-
   double **x = atom->x;
   int *type = atom->type;
 

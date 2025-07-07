@@ -31,6 +31,8 @@ public:
   void init();
   void init_list(int, class NeighList *);
 
+  double compute_single_atom_unc(int i);
+
 protected:
   double *stds;
   double **desc_derv;

@@ -229,6 +229,140 @@ void ComputeFlareStdAtom::compute_peratom() {
 
 /* ---------------------------------------------------------------------- */
 
+double ComputeFlareStdAtom::compute_single_atom_unc() {
+  if (atom->nmax > nmax) {
+    memory->destroy(stds);
+    nmax = atom->nmax;
+    memory->create(stds,nmax,"flare/std/atom:stds");
+    vector_atom = stds;
+  }
+
+  double **x = atom->x;
+  int *type = atom->type;
+  int nlocal = atom->nlocal;
+  int nall = nlocal + atom->nghost;
+  int newton_pair = force->newton_pair;
+  int ntotal = nlocal;
+  if (force->newton) ntotal += atom->nghost;
+
+  // invoke full neighbor list (will copy or build if necessary)
+
+  neighbor->build_one(list);
+
+  stds[i] = 0.0;
+
+  for (int ii = 0; ii < ntotal; ii++) {
+    stds[ii] = 0.0;
+  }
+
+  double delx, dely, delz, xtmp, ytmp, ztmp, rsq;
+  int *ilist, *jlist, *numneigh, **firstneigh;
+
+  int inum = list->inum;
+  ilist = list->ilist;
+  numneigh = list->numneigh;
+  firstneigh = list->firstneigh;
+
+  int beta_init, beta_counter;
+  double B2_norm_squared, B2_val_1, B2_val_2;
+
+  Eigen::VectorXd single_bond_vals, B2_vals, B2_env_dot, beta_p, partial_forces, u;
+  Eigen::MatrixXd single_bond_env_dervs, B2_env_dervs;
+  double empty_thresh = 1e-8;
+
+  int itype = type[i];
+  int jnum = numneigh[i];
+  xtmp = x[i][0];
+  ytmp = x[i][1];
+  ztmp = x[i][2];
+  jlist = firstneigh[i];
+
+  // Count the atoms inside the cutoff.
+  int n_inner = 0;
+  for (int jj = 0; jj < jnum; jj++) {
+    int j = jlist[jj];
+    int s = type[j] - 1;
+    double cutoff_val = cutoff_matrix(itype-1, s);
+
+    delx = x[j][0] - xtmp;
+    dely = x[j][1] - ytmp;
+    delz = x[j][2] - ztmp;
+    rsq = delx * delx + dely * dely + delz * delz;
+    if (rsq < (cutoff_val * cutoff_val)) {
+      n_inner++;
+    }
+
+  }
+
+  // Compute covariant descriptors.
+  single_bond_multiple_cutoffs(x, type, jnum, n_inner, i, xtmp, ytmp, ztmp,
+                                jlist, basis_function, cutoff_function,
+                                n_species, n_max, l_max, radial_hyps,
+                                cutoff_hyps, single_bond_vals,
+                                single_bond_env_dervs, cutoff_matrix);
+
+  // Compute invariant descriptors.
+  B2_descriptor(B2_vals, B2_norm_squared,
+                single_bond_vals, n_species, n_max, l_max);
+
+  double variance = 0.0;
+  double sig = hyperparameters(0);
+  double sig2 = sig * sig;
+
+  // Continue if the environment is empty.
+  if (B2_norm_squared < empty_thresh)
+    continue;
+
+  if (use_map) {
+    Eigen::VectorXd Q_desc;
+    double K_self;
+    if (normalized) {
+      K_self = 1.0;
+      double B2_norm = pow(B2_norm_squared, 0.5);
+      Q_desc = beta_matrices[itype - 1].transpose() * B2_vals / B2_norm;
+    } else {
+      K_self = B2_norm_squared; // only power 1 is supported
+      Q_desc = beta_matrices[itype - 1].transpose() * B2_vals;
+    }
+    variance = K_self - Q_desc.dot(Q_desc);
+  } else {
+    Eigen::VectorXd kernel_vec = Eigen::VectorXd::Zero(n_clusters);
+    double K_self;
+    double B2_norm = pow(B2_norm_squared, 0.5);
+    Eigen::VectorXd normed_B2 = B2_vals / B2_norm;
+    int cum_types = 0;
+    for (int s = 0; s < n_types; s++) {
+      if (type[i] - 1 == s) {
+        if (normalized) {
+          kernel_vec.segment(cum_types, n_clusters_by_type[s]) = (normed_sparse_descriptors[s] * normed_B2).array().pow(power);
+          K_self = 1.0;
+        } else {
+          // the normed_sparse_descriptors is non-normalized in this case
+          kernel_vec.segment(cum_types, n_clusters_by_type[s]) = (normed_sparse_descriptors[s] * B2_vals).array().pow(power);
+          K_self = pow(B2_norm_squared, power);
+        }
+      }
+      cum_types += n_clusters_by_type[s];
+    }
+    Eigen::VectorXd L_inv_kv = L_inv_blocks[0] * kernel_vec;
+    double Q_self = sig2 * L_inv_kv.transpose() * L_inv_kv;
+
+    variance = K_self - Q_self;
+  }
+
+  // Compute the normalized variance, it could be negative
+  if (variance >= 0.0) {
+    stds[i] = pow(variance, 0.5);
+  } else {
+    stds[i] = - pow(abs(variance), 0.5);
+  }
+
+  return stds[i];
+
+}
+
+/* ---------------------------------------------------------------------- */
+
 int ComputeFlareStdAtom::pack_reverse_comm(int n, int first, double *buf)
 {
     // TODO: add desc_derv to this
