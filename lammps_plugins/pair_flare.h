@@ -11,6 +11,7 @@ PairStyle(flare, PairFLARE)
 #define LMP_PAIR_FLARE_H
 
 #include "pair.h"
+#include "compute.h"
 #include <Eigen/Dense>
 #include <cstdio>
 #include <vector>
@@ -49,6 +50,8 @@ protected:
   virtual void allocate();
   virtual void read_file(char *);
   void grab(FILE *, int, double *);
+
+  Compute *comp_unc;
 };
 
 } // namespace LAMMPS_NS

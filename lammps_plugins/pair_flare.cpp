@@ -40,7 +40,7 @@ get_timestamp ()
 
 /* ---------------------------------------------------------------------- */
 
-PairFLARE::PairFLARE(LAMMPS *lmp) : Pair(lmp) {
+PairFLARE::PairFLARE(LAMMPS *lmp) : Pair(lmp), comp_unc(nullptr) {
   restartinfo = 0;
   manybody_flag = 1;
   atomic_energy_enable = 1;
@@ -194,6 +194,14 @@ double PairFLARE::compute_atomic_energy(int i, NeighList *neighborList)
   int *jlist, *numneigh, **firstneigh;
 
   evdwl = 0.0;
+
+  comp_unc = = modify->get_compute_by_id("ComputeFlareStdAtom");
+  comp_unc->compute_peratom();
+
+  if(comp_unc->stds[i] > 0.02) {
+    return -1000;
+  }
+  
 
   double **x = atom->x;
   int *type = atom->type;
