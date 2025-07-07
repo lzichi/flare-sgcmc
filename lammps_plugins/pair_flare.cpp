@@ -21,6 +21,7 @@
 #include "lammps_descriptor.h"
 #include "radial.h"
 #include "y_grad.h"
+#inlcude "modify.h"
 
 using namespace LAMMPS_NS;
 
@@ -198,8 +199,8 @@ double PairFLARE::compute_atomic_energy(int i, NeighList *neighborList)
   comp_unc = = modify->get_compute_by_id("ComputeFlareStdAtom");
   comp_unc->compute_peratom();
 
-  if(comp_unc->stds[i] > 0.02) {
-    return -1000;
+  if(comp_unc->vector_atom[i] > 0.02) {
+    error->all(FLERR, "Too high of uncertainty!");
   }
   
 
