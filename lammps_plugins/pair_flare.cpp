@@ -196,6 +196,8 @@ double PairFLARE::compute_atomic_energy(int i, NeighList *neighborList)
 
   evdwl = 0.0;
 
+  printf("HELLO! inside compute atomic energy \n");
+
   comp_unc = modify->get_compute_by_id("ComputeFlareStdAtom");
   comp_unc->compute_peratom();
 
