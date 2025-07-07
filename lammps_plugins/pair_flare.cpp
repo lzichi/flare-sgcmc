@@ -196,7 +196,7 @@ double PairFLARE::compute_atomic_energy(int i, NeighList *neighborList)
 
   evdwl = 0.0;
 
-  comp_unc = = modify->get_compute_by_id("ComputeFlareStdAtom");
+  comp_unc = modify->get_compute_by_id("ComputeFlareStdAtom");
   comp_unc->compute_peratom();
 
   if(comp_unc->vector_atom[i] > 0.02) {
