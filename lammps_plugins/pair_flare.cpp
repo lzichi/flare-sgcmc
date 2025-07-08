@@ -41,7 +41,7 @@ get_timestamp ()
 
 /* ---------------------------------------------------------------------- */
 
-PairFLARE::PairFLARE(LAMMPS *lmp) : Pair(lmp), comp_unc(nullptr) {
+PairFLARE::PairFLARE(LAMMPS *lmp) : Pair(lmp) {
   restartinfo = 0;
   manybody_flag = 1;
   atomic_energy_enable = 1;
