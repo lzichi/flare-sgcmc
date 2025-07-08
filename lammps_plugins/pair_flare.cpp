@@ -255,8 +255,10 @@ double PairFLARE::compute_atomic_energy(int i, NeighList *neighborList)
 
   // error out if uncertainty is too high; garbage prediction
   // this may be the first time the simulation sees this type of atom
-  if(variance > 0.01) {
-    error->all(FLERR, "Too high of uncertainty!");
+  if(variance > 0.02) {
+    printf("High variance in compute_atomic_atom, type %d", atom->type[i]);
+    return -1000;
+    //error->all(FLERR, "Too high of uncertainty!");
   }
 
   compute_energy_and_u(B2_vals, B2_norm_squared, single_bond_vals, power,
