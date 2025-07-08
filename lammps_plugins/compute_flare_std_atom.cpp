@@ -311,7 +311,7 @@ double ComputeFlareStdAtom::compute_single_atom_unc(int i) {
 
   // Continue if the environment is empty.
   if (B2_norm_squared < empty_thresh)
-    continue;
+    return 0.0;
 
   if (use_map) {
     Eigen::VectorXd Q_desc;
