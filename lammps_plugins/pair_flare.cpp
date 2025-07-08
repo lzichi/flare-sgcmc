@@ -21,7 +21,6 @@
 #include "lammps_descriptor.h"
 #include "radial.h"
 #include "y_grad.h"
-#include "modify.h"
 
 using namespace LAMMPS_NS;
 

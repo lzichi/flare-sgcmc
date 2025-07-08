@@ -11,8 +11,7 @@ PairStyle(flare, PairFLARE)
 #define LMP_PAIR_FLARE_H
 
 #include "pair.h"
-#include "compute.h"
-#include "compute_flare_std_atom.cpp"
+
 #include <Eigen/Dense>
 #include <cstdio>
 #include <vector>
