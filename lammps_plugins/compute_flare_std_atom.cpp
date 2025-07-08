@@ -229,7 +229,7 @@ void ComputeFlareStdAtom::compute_peratom() {
 
 /* ---------------------------------------------------------------------- */
 
-double ComputeFlareStdAtom::compute_single_atom_unc() {
+double ComputeFlareStdAtom::compute_single_atom_unc(int i) {
   if (atom->nmax > nmax) {
     memory->destroy(stds);
     nmax = atom->nmax;
