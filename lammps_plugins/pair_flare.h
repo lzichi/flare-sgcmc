@@ -52,7 +52,6 @@ protected:
   virtual void read_file(char *);
   void grab(FILE *, int, double *);
 
-  ComputeFlareStdAtom *comp_unc;
 };
 
 } // namespace LAMMPS_NS

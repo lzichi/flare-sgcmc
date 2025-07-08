@@ -195,21 +195,6 @@ double PairFLARE::compute_atomic_energy(int i, NeighList *neighborList)
   int *jlist, *numneigh, **firstneigh;
 
   evdwl = 0.0;
-
-  printf("HELLO! inside compute atomic energy \n");
-  if(comp_unc == nullptr) {
-    comp_unc = modify->get_compute_by_id("unc");
-  }
-  
-  double unc = comp_unc->compute_single_atom_unc(i);
-
-  if(atom->type[i] != 1) {
-    printf("unc: %g, type %d", unc, atom->type[i]);
-  }
-
-  if(unc > 0.02) {
-    error->all(FLERR, "Too high of uncertainty!");
-  }
   
   double **x = atom->x;
   int *type = atom->type;
@@ -254,6 +239,26 @@ double PairFLARE::compute_atomic_energy(int i, NeighList *neighborList)
   // Compute invariant descriptors.
   B2_descriptor(B2_vals, B2_norm_squared,
                 single_bond_vals, n_species, n_max, l_max);
+
+  // calculate the uncertainty of the atom
+  double variance = 0.0;
+  Eigen::VectorXd Q_desc;
+  double K_self;
+  if (normalized) {
+    K_self = 1.0;
+    double B2_norm = pow(B2_norm_squared, 0.5);
+    Q_desc = beta_matrices[itype - 1].transpose() * B2_vals / B2_norm;
+  } else {
+    K_self = B2_norm_squared; // only power 1 is supported
+    Q_desc = beta_matrices[itype - 1].transpose() * B2_vals;
+  }
+  variance = K_self - Q_desc.dot(Q_desc);
+
+  // error out if uncertainty is too high; garbage prediction
+  // this may be the first time the simulation sees this type of atom
+  if(variance > 0.01) {
+    error->all(FLERR, "Too high of uncertainty!");
+  }
 
   compute_energy_and_u(B2_vals, B2_norm_squared, single_bond_vals, power,
           n_species, n_max, l_max, beta_matrices[itype - 1], u, &evdwl, normalized);
