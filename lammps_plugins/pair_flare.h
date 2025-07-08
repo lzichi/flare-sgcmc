@@ -12,6 +12,7 @@ PairStyle(flare, PairFLARE)
 
 #include "pair.h"
 #include "compute.h"
+#include "compute_flare_std_atom.cpp"
 #include <Eigen/Dense>
 #include <cstdio>
 #include <vector>
@@ -51,7 +52,7 @@ protected:
   virtual void read_file(char *);
   void grab(FILE *, int, double *);
 
-  Compute *comp_unc;
+  ComputeFlareStdAtom *comp_unc;
 };
 
 } // namespace LAMMPS_NS
