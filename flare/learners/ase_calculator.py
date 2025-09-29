@@ -34,7 +34,7 @@ class FlareOTF(Calculator):
     rcut
         The interaction cut-off radius.
     type2number
-        The atomic numbers of all LAMMPS types.
+        FLARE index of ASE atomic numbers e.g. box of C, ase type 6 FLARE type 0 type2number = [0]
     dftcalc
         An ASE calculator, e.g. Espresso.
     energy_correction
@@ -156,7 +156,7 @@ class FlareOTF(Calculator):
             cell = atoms.get_cell()
             types = atoms.numbers
             step = self.call
-            structure = Structure(cell, types - 1, x, self.rcut, self.descriptors) # TODO: why subtract by 1
+            structure = Structure(cell, self.type2number[types], x, self.rcut, self.descriptors) # TODO: why subtract by 1
             
             if self.dft_calls == 0:
                 self.logger.info("Initial step, calling DFT")
@@ -178,7 +178,7 @@ class FlareOTF(Calculator):
                 if self.std_xyz_fname is not None:
                     frame = ase.Atoms(
                         positions=x,
-                        numbers=(self.type2number[types - 1]),
+                        numbers=types,
                         cell=cell,
                         pbc=True,
                     )
