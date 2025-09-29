@@ -87,6 +87,7 @@ class FlareOTF(Calculator):
         dft_add_threshold: float = 0.0025,
         dft_xyz_fname: Optional[str] = None,
         std_xyz_fname: Optional[str] = None,
+        model_fname: str = "otf.flare",
         hyperparameter_optimization: Callable[
             (["FlareOTF", object, int], bool)
         ] = lambda flareotf,  step: False,
@@ -120,6 +121,7 @@ class FlareOTF(Calculator):
         self.last_dft_call = -100
         self.dft_xyz_fname = dft_xyz_fname
         self.std_xyz_fname = std_xyz_fname
+        self.model_fname = model_fname
         self.hyperparameter_optimization = hyperparameter_optimization
         self.opt_bounds = opt_bounds
         self.opt_method = opt_method
@@ -240,7 +242,7 @@ class FlareOTF(Calculator):
                         )
                     self.save(self.model_fname)
                     wandb_log["Fmae"] = np.mean(np.abs(F - predF))
-                    wandb_log["Emae"] = np.abs(pe - predE) / natoms
+                    wandb_log["Emae"] = np.abs(E - predE) / natoms
                     wandb_log["n_added"] = len(atoms_to_be_added)
                     for qty in ("n_added", "Fmae", "Emae"):
                         self.logger.info(f"{qty}: {wandb_log[qty]}")
