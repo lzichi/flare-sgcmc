@@ -22,6 +22,9 @@ def transform_stress(stress: List[List[float]]) -> List[List[float]]:
 
 
 class FlareOTF(Calculator):
+
+    implemented_properties = ['energy', 'forces']
+    
     """
     FLARE on-the-fly training with an ASE Calculator. Based on LMPOTF.
 
