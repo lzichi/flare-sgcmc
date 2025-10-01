@@ -314,7 +314,7 @@ class LMPOTF:
         ):
 
         atoms_frames = read(input_frames, ":")
-
+        print("inside of offline training, attempting frame 0")
         atoms = atoms_frames[0]
         # treat first frame like first DFT call
         self.logger.info(f"[offline training] Frame 0")
@@ -327,15 +327,18 @@ class LMPOTF:
         F = atoms.get_forces()
         S = atoms.get_stress(voigt=True)
 
+        structure = Structure(cell, np.vectorize(typeMapping.get)(types), x, self.rcut, self.descriptors) 
+        
         structure.forces = F.reshape(-1)
         structure.energy = np.array([E])
         structure.stresses = transform_stress(S)
-
-        structure = Structure(cell, np.vectorize(typeMapping.get)(types), x, self.rcut, self.descriptors) 
+        
         self.sparse_gp.add_training_structure(structure)
         self.sparse_gp.add_random_environments(structure, [int(natoms/4)])
         self.sparse_gp.update_matrices_QR()
         self.dft_calls += 1
+
+        print("finished frame 0")
 
         # go through all remaining frames
         for idx, atoms in enumerate(atoms_frames[1:]):
@@ -349,6 +352,10 @@ class LMPOTF:
             E = atoms.get_potential_energy()
             F = atoms.get_forces()
             S = atoms.get_stress(voigt=True)
+
+            structure.forces = F.reshape(-1)
+            structure.energy = np.array([E])
+            structure.stresses = transform_stress(S)
 
             sigma = self.sparse_gp.hyperparameters[0]
             variances = sort_variances(structure, self.sparse_gp.compute_cluster_uncertainties(structure)[0])
