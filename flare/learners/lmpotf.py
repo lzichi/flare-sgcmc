@@ -314,21 +314,46 @@ class LMPOTF:
         ):
 
         atoms_frames = read(input_frames, ":")
-        for idx, atoms in enumerate(atoms_frames):
+
+        # treat first frame like first DFT call
+        natoms = len(atoms)
+        x = atoms.get_positions()
+        cell = atoms.get_cell()
+        types = atoms.numbers
+        structure = Structure(cell, np.vectorize(typeMapping.get)(types), x, self.rcut, self.descriptors) 
+        self.sparse_gp.add_training_structure(structure)
+        self.sparse_gp.add_random_environments(structure, [int(natoms/4)])
+        self.sparse_gp.update_matrices_QR()
+        self.dft_calls += 1
+
+        # go through all remaining frames
+        for idx, atoms in enumerate(atoms_frames[1:]):
             natoms = len(atoms)
             x = atoms.get_positions()
             cell = atoms.get_cell()
             types = atoms.numbers
-            step = self.call
             structure = Structure(cell, np.vectorize(typeMapping.get)(types), x, self.rcut, self.descriptors) 
 
-            self.logger.info(f"[offline training] Frame {idx}")
-            E, F, S = self.run_dft(cell, x, types, step, structure)
+            self.logger.info(f"[offline training] Frame {idx + 1}")
+            E = atoms.get_potential_energy()
+            F = atoms.get_forces()
+            S = atoms.get_stress(voigt=True)
+
+            sigma = self.sparse_gp.hyperparameters[0]
+            variances = sort_variances(structure, self.sparse_gp.compute_cluster_uncertainties(structure)[0])
+            stds = np.sqrt(np.abs(variances)) / sigma
+            atoms_to_be_added = np.arange(natoms)[stds > self.dft_add_threshold]
+
             t0 = time.time()
             self.sparse_gp.add_training_structure(structure)
-            self.sparse_gp.add_random_environments(structure, [int(natoms/4)])
+            self.sparse_gp.add_specific_environments(
+                        structure, atoms_to_be_added
+                    )
             self.sparse_gp.update_matrices_QR()
             self.time_training += time.time() - t0
-            self.save(self.model_fname)
+            self.dft_calls += 1
+
+        # save the model
+        self.save(self.model_fname)
 
 
