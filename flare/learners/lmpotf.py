@@ -325,7 +325,7 @@ class LMPOTF:
 
         E = atoms.get_potential_energy()
         F = atoms.get_forces()
-        S = atoms.get_stress(voigt=True)
+        S = atoms.get_stress(voigt=False)
 
         structure = Structure(cell, np.vectorize(typeMapping.get)(types), x, self.rcut, self.descriptors) 
         
@@ -351,7 +351,7 @@ class LMPOTF:
             self.logger.info(f"[offline training] Frame {idx + 1}")
             E = atoms.get_potential_energy()
             F = atoms.get_forces()
-            S = atoms.get_stress(voigt=True)
+            S = atoms.get_stress(voigt=False)
 
             structure.forces = F.reshape(-1)
             structure.energy = np.array([E])
