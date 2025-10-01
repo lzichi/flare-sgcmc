@@ -315,7 +315,9 @@ class LMPOTF:
 
         atoms_frames = read(input_frames, ":")
 
+        atoms = atoms_frames[0]
         # treat first frame like first DFT call
+        self.logger.info(f"[offline training] Frame 0")
         natoms = len(atoms)
         x = atoms.get_positions()
         cell = atoms.get_cell()
