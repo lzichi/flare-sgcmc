@@ -7,6 +7,7 @@ from flare.bffs.sgp.calculator import sort_variances
 import logging
 import time
 
+from ase.io import read
 
 def transform_stress(stress: List[List[float]]) -> List[List[float]]:
     return -np.array(
@@ -305,3 +306,29 @@ class LMPOTF:
 
         self.time_dft += time.time() - t0
         return (pe, F)
+    
+    def offline_train(
+            self,
+            input_frames: str,
+            typeMapping
+        ):
+
+        atoms_frames = read(input_frames, ":")
+        for idx, atoms in enumerate(atoms_frames):
+            natoms = len(atoms)
+            x = atoms.get_positions()
+            cell = atoms.get_cell()
+            types = atoms.numbers
+            step = self.call
+            structure = Structure(cell, np.vectorize(typeMapping.get)(types), x, self.rcut, self.descriptors) 
+
+            self.logger.info(f"[offline training] Frame {idx}")
+            E, F, S = self.run_dft(cell, x, types, step, structure)
+            t0 = time.time()
+            self.sparse_gp.add_training_structure(structure)
+            self.sparse_gp.add_random_environments(structure, [int(natoms/4)])
+            self.sparse_gp.update_matrices_QR()
+            self.time_training += time.time() - t0
+            self.save(self.model_fname)
+
+
