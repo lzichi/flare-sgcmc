@@ -314,7 +314,6 @@ class LMPOTF:
         ):
 
         atoms_frames = read(input_frames, ":")
-        print("inside of offline training, attempting frame 0")
         atoms = atoms_frames[0]
         # treat first frame like first DFT call
         self.logger.info(f"[offline training] Frame 0")
@@ -336,9 +335,6 @@ class LMPOTF:
         self.sparse_gp.add_training_structure(structure)
         self.sparse_gp.add_random_environments(structure, [int(natoms/4)])
         self.sparse_gp.update_matrices_QR()
-        self.dft_calls += 1
-
-        print("finished frame 0")
 
         # go through all remaining frames
         for idx, atoms in enumerate(atoms_frames[1:]):
@@ -369,7 +365,6 @@ class LMPOTF:
                     )
             self.sparse_gp.update_matrices_QR()
             self.time_training += time.time() - t0
-            self.dft_calls += 1
 
         # save the model
         self.save(self.model_fname)
