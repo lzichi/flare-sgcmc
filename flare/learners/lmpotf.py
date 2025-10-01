@@ -322,6 +322,15 @@ class LMPOTF:
         x = atoms.get_positions()
         cell = atoms.get_cell()
         types = atoms.numbers
+
+        E = atoms.get_potential_energy()
+        F = atoms.get_forces()
+        S = atoms.get_stress(voigt=True)
+
+        structure.forces = F.reshape(-1)
+        structure.energy = np.array([E])
+        structure.stresses = transform_stress(S)
+
         structure = Structure(cell, np.vectorize(typeMapping.get)(types), x, self.rcut, self.descriptors) 
         self.sparse_gp.add_training_structure(structure)
         self.sparse_gp.add_random_environments(structure, [int(natoms/4)])
