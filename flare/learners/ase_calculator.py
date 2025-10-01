@@ -261,7 +261,6 @@ class FlareOTF(Calculator):
                     wandb_log["time_prediction"] = self.time_prediction
                     wandb_log["time_predict_uncertainties"] = self.time_predict_uncertainties
                     wandb_log["time_hyp_opt"] = self.time_hyp_opt
-                    wandb_log["time_lammps"] = self.time_lammps
                     if call_dft:
                         wandb_log["Funcertainties"] = self.wandb.Histogram(Fstd.ravel())
                         wandb_log["Ferror"] = self.wandb.Histogram(
