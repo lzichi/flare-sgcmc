@@ -205,7 +205,7 @@ class FlareOTF(Calculator):
                 wandb_log["max_F_uncertainty"] = np.amax(Fstd)
                 self.logger.info(f"Max force uncertainty: {np.amax(Fstd)}")
                 self.logger.info(f"DFT call #{self.dft_calls}")
-                E, F, S = self.run_dft(cell, x, types, step, structure)
+                E, F, S = self.run_dft(cell, x, types_ase, step, structure)
                 atoms_to_be_added = np.arange(natoms)[stds > self.dft_add_threshold]
                 t0 = time.time()
                 self.sparse_gp.add_training_structure(structure)
