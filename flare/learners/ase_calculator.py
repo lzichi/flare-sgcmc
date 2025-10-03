@@ -180,7 +180,7 @@ class FlareOTF(Calculator):
             if self.std_xyz_fname is not None:
                 frame = ase.Atoms(
                     positions=x,
-                    numbers=types,
+                    numbers=types_ase,
                     cell=cell,
                     pbc=True,
                 )
