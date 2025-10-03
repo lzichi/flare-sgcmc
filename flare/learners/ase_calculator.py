@@ -8,6 +8,7 @@ import logging
 import time
 from ase import Atoms
 import numpy as np
+from lammps import lammps
 
 def transform_stress(stress: List[List[float]]) -> List[List[float]]:
     return -np.array(
@@ -130,7 +131,7 @@ class FlareOTF(Calculator):
         logging.basicConfig(
             filename=log_fname, level=(logging.DEBUG), format="%(asctime)s: %(message)s"
         )
-        self.logger = logging.getLogger("lmpotf")
+        self.logger = logging.getLogger("flareotf")
 
         self.time_dft = 0.0
         self.time_hyp_opt = 0.0
@@ -145,6 +146,95 @@ class FlareOTF(Calculator):
     def save(self, fname):
         self.sparse_gp.write_mapping_coefficients(fname, "FlareOTF", 0)
 
+    def main_step(
+            self,
+            cell,
+            x,
+            types,
+            step,
+            structure,
+            natoms
+        ):
+        E, F, S = None, None, None
+        if self.dft_calls == 0:
+            self.logger.info("Initial step, calling DFT")
+            E, F, S = self.run_dft(cell, x, types, step, structure)
+            t0 = time.time()
+            self.sparse_gp.add_training_structure(structure)
+            self.sparse_gp.add_random_environments(structure, [int(natoms/4)])
+            self.sparse_gp.update_matrices_QR()
+            self.time_training += time.time() - t0
+            self.save(self.model_fname)
+
+        else:
+            self.logger.info(f"Step {step}")
+            sigma = self.sparse_gp.hyperparameters[0]
+            t0 = time.time()
+            variances = sort_variances(structure, self.sparse_gp.compute_cluster_uncertainties(structure)[0])
+            self.time_predict_uncertainties += time.time() - t0
+            stds = np.sqrt(np.abs(variances)) / sigma
+            if self.std_xyz_fname is not None:
+                frame = ase.Atoms(
+                    positions=x,
+                    numbers=types,
+                    cell=cell,
+                    pbc=True,
+                )
+                frame.set_array("charges", stds)
+                
+                ase.io.write(self.std_xyz_fname.replace("*", str(step)), frame, format="extxyz")
+            wandb_log = {"max_uncertainty": np.amax(stds)}
+            self.logger.info(f"Max uncertainty: {np.amax(stds)}")
+            call_dft = np.any(stds > self.dft_call_threshold)
+            if call_dft:
+                t0 = time.time()
+                self.sparse_gp.predict_DTC(structure)
+                self.time_prediction += time.time() - t0
+                predE = structure.mean_efs[0]
+                predF = structure.mean_efs[1:-6].reshape((-1, 3))
+                predS = structure.mean_efs[-6:]
+                Fstd = np.sqrt(np.abs(structure.variance_efs[1:-6])).reshape(
+                    (-1, 3)
+                )
+                Estd = np.sqrt(np.abs(structure.variance_efs[0]))
+                Sstd = np.sqrt(np.abs(structure.variance_efs[-6:]))
+                wandb_log["max_F_uncertainty"] = np.amax(Fstd)
+                self.logger.info(f"Max force uncertainty: {np.amax(Fstd)}")
+                self.logger.info(f"DFT call #{self.dft_calls}")
+                E, F, S = self.run_dft(cell, x, types, step, structure)
+                atoms_to_be_added = np.arange(natoms)[stds > self.dft_add_threshold]
+                t0 = time.time()
+                self.sparse_gp.add_training_structure(structure)
+                self.sparse_gp.add_specific_environments(
+                    structure, atoms_to_be_added
+                )
+                self.sparse_gp.update_matrices_QR()
+                self.time_training += time.time() - t0
+                if self.hyperparameter_optimization(self, step):
+                    self.logger.info("Optimizing hyperparameters!")
+                    self.sparse_gp.compute_likelihood_stable()
+                    likelihood_before = self.sparse_gp.log_marginal_likelihood
+                    t0 = time.time()
+                    optimize_hyperparameters(
+                        (self.sparse_gp),
+                        bounds=(self.opt_bounds),
+                        method=(self.opt_method),
+                        max_iterations=(self.opt_iterations),
+                    )
+                    self.time_hyp_opt += time.time() - t0
+                    likelihood_after = self.sparse_gp.log_marginal_likelihood
+                    self.logger.info(
+                        f"Likelihood before/after: {likelihood_before:.2e} {likelihood_after:.2e}"
+                    )
+                    self.logger.info(
+                        f"Likelihood gradient: {self.sparse_gp.likelihood_gradient}"
+                    )
+                    self.logger.info(
+                        f"Hyperparameters: {self.sparse_gp.hyperparameters}"
+                    )
+                self.save(self.model_fname)
+        return E, F, S
+            
     def calculate(
             self, 
             atoms: Atoms = None,
@@ -164,113 +254,13 @@ class FlareOTF(Calculator):
             step = self.call
             structure = Structure(cell, np.vectorize(self.type2number.get)(types), x, self.rcut, self.descriptors) # TODO: why subtract by 1
             
-            if self.dft_calls == 0:
-                self.logger.info("Initial step, calling DFT")
-                E, F, S = self.run_dft(cell, x, types, step, structure)
-                t0 = time.time()
-                self.sparse_gp.add_training_structure(structure)
-                self.sparse_gp.add_random_environments(structure, [int(natoms/4)])
-                self.sparse_gp.update_matrices_QR()
-                self.time_training += time.time() - t0
-                self.save(self.model_fname)
-
-            else:
-                self.logger.info(f"Step {step}")
-                sigma = self.sparse_gp.hyperparameters[0]
-                t0 = time.time()
-                variances = sort_variances(structure, self.sparse_gp.compute_cluster_uncertainties(structure)[0])
-                self.time_predict_uncertainties += time.time() - t0
-                stds = np.sqrt(np.abs(variances)) / sigma
-                if self.std_xyz_fname is not None:
-                    frame = ase.Atoms(
-                        positions=x,
-                        numbers=types,
-                        cell=cell,
-                        pbc=True,
-                    )
-                    frame.set_array("charges", stds)
-                    
-                    ase.io.write(self.std_xyz_fname.replace("*", str(step)), frame, format="extxyz")
-                wandb_log = {"max_uncertainty": np.amax(stds)}
-                self.logger.info(f"Max uncertainty: {np.amax(stds)}")
-                call_dft = np.any(stds > self.dft_call_threshold)
-                if call_dft:
-                    t0 = time.time()
-                    self.sparse_gp.predict_DTC(structure)
-                    self.time_prediction += time.time() - t0
-                    predE = structure.mean_efs[0]
-                    predF = structure.mean_efs[1:-6].reshape((-1, 3))
-                    predS = structure.mean_efs[-6:]
-                    Fstd = np.sqrt(np.abs(structure.variance_efs[1:-6])).reshape(
-                        (-1, 3)
-                    )
-                    Estd = np.sqrt(np.abs(structure.variance_efs[0]))
-                    Sstd = np.sqrt(np.abs(structure.variance_efs[-6:]))
-                    wandb_log["max_F_uncertainty"] = np.amax(Fstd)
-                    self.logger.info(f"Max force uncertainty: {np.amax(Fstd)}")
-                    self.logger.info(f"DFT call #{self.dft_calls}")
-                    E, F, S = self.run_dft(cell, x, types, step, structure)
-                    atoms_to_be_added = np.arange(natoms)[stds > self.dft_add_threshold]
-                    t0 = time.time()
-                    self.sparse_gp.add_training_structure(structure)
-                    self.sparse_gp.add_specific_environments(
-                        structure, atoms_to_be_added
-                    )
-                    self.sparse_gp.update_matrices_QR()
-                    self.time_training += time.time() - t0
-                    if self.hyperparameter_optimization(self, step):
-                        self.logger.info("Optimizing hyperparameters!")
-                        self.sparse_gp.compute_likelihood_stable()
-                        likelihood_before = self.sparse_gp.log_marginal_likelihood
-                        t0 = time.time()
-                        optimize_hyperparameters(
-                            (self.sparse_gp),
-                            bounds=(self.opt_bounds),
-                            method=(self.opt_method),
-                            max_iterations=(self.opt_iterations),
-                        )
-                        self.time_hyp_opt += time.time() - t0
-                        likelihood_after = self.sparse_gp.log_marginal_likelihood
-                        self.logger.info(
-                            f"Likelihood before/after: {likelihood_before:.2e} {likelihood_after:.2e}"
-                        )
-                        self.logger.info(
-                            f"Likelihood gradient: {self.sparse_gp.likelihood_gradient}"
-                        )
-                        self.logger.info(
-                            f"Hyperparameters: {self.sparse_gp.hyperparameters}"
-                        )
-                    self.save(self.model_fname)
-                    wandb_log["Fmae"] = np.mean(np.abs(F - predF))
-                    wandb_log["Emae"] = np.abs(E - predE) / natoms
-                    wandb_log["n_added"] = len(atoms_to_be_added)
-                    for qty in ("n_added", "Fmae", "Emae"):
-                        self.logger.info(f"{qty}: {wandb_log[qty]}")
-
-                else:
-                    # no call to DFT
-                    self.sparse_gp.predict_DTC(structure)
-                    E = structure.mean_efs[0]
-                    F = structure.mean_efs[1:-6].reshape((-1, 3))
-                    S = structure.mean_efs[-6:]
-
-                if self.wandb is not None:
-                    wandb_log["uncertainties"] = self.wandb.Histogram(stds)
-                    wandb_log["time_dft"] = self.time_dft
-                    wandb_log["time_training"] = self.time_training
-                    wandb_log["time_prediction"] = self.time_prediction
-                    wandb_log["time_predict_uncertainties"] = self.time_predict_uncertainties
-                    wandb_log["time_hyp_opt"] = self.time_hyp_opt
-                    if call_dft:
-                        wandb_log["Funcertainties"] = self.wandb.Histogram(Fstd.ravel())
-                        wandb_log["Ferror"] = self.wandb.Histogram(
-                            np.abs(F - predF).ravel()
-                        )
-                        wandb_log["logrelFerror"] = self.wandb.Histogram(
-                            np.log10(np.abs(F - predF)/np.abs(F)).ravel()
-                        )
-                    self.wandb.log(wandb_log, step=step)
-                    self.t0 = time.time()
+            E, F, S = self.main_step(cell, x, types, step, structure, natoms)
+            if(E is None):
+                # no call to DFT
+                self.sparse_gp.predict_DTC(structure)
+                E = structure.mean_efs[0]
+                F = structure.mean_efs[1:-6].reshape((-1, 3))
+                S = structure.mean_efs[-6:]
 
             # Store results in ASE format
             self.results = {
@@ -286,6 +276,40 @@ class FlareOTF(Calculator):
             finally:
                 err = None
                 del err
+
+    def step(
+            self,
+            lmpptr,
+            evflag=0
+        ):
+        try:
+            lmp = lammps(ptr=lmpptr)
+            natoms = lmp.get_natoms()
+            x = lmp.gather_atoms("x", 1, 3)
+            x = np.ctypeslib.as_array(x, shape=(natoms, 3)).reshape(natoms, 3)
+            step = int(lmp.get_thermo("step"))
+            boxlo, boxhi, xy, yz, xz, _, _ = lmp.extract_box()
+            cell = np.diag(np.array(boxhi) - np.array(boxlo))
+            cell[(1, 0)] = xy
+            cell[(2, 0)] = xz
+            cell[(2, 1)] = yz
+            types = lmp.gather_atoms("type", 0, 1)
+            types = np.ctypeslib.as_array(types, shape=natoms)
+            structure = Structure(cell, types - 1, x, self.rcut, self.descriptors)
+            E, F, S = self.main_step(cell, x, types, step, structure, natoms)
+
+            if(E is not None):
+                # called DFT
+                lmp.command(f"pair_coeff * * {self.model_fname}")
+        
+        except Exception as err:
+            try:
+                self.logger.exception("LMPOTF ERROR")
+                raise err
+            finally:
+                err = None
+                del err
+
 
     def run_dft(self, cell, x, types, step, structure):
         t0 = time.time()
