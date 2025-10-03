@@ -306,8 +306,11 @@ class FlareOTF(Calculator):
             structure = Structure(cell, types_flare, x, self.rcut, self.descriptors)
             E, F, S = self.main_step(cell, x, types_ase, types_flare, step, structure, natoms)
 
-            if(E is not None):
+            if(E is not None and self.dft_calls != 1):
                 # called DFT
+                # for the first step need to not call lammps or 
+                # Exception: ERROR: Pair_coeff command without a pair style (src/input.cpp:1745)
+                # Last input line: pair_coeff * * NiH2O.otf.flare
                 lmp.command(f"pair_coeff * * {self.model_fname}")
         
         except Exception as err:
