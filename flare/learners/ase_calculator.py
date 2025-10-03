@@ -110,7 +110,7 @@ class FlareOTF(Calculator):
         self.sparse_gp = sparse_gp
         self.descriptors = np.atleast_1d(descriptors)
         self.rcut = rcut
-        self.type2number = type2number
+        self.type2number = np.atleast_1d(type2number)
         self.type2numberase = type2numberase
         self.ntypes = len(self.type2number)
         self.energy_correction = np.atleast_1d(energy_correction)
