@@ -9,6 +9,7 @@ import time
 from ase import Atoms
 import numpy as np
 from lammps import lammps
+from ase.io import read
 
 def transform_stress(stress: List[List[float]]) -> List[List[float]]:
     return -np.array(
@@ -79,6 +80,7 @@ class FlareOTF(Calculator):
         descriptors: List,
         rcut: float,
         type2number,
+        type2numberase,
         dftcalc: object,
         energy_correction: Union[(float, List[float])] = 0.0,
         force_training=True,
@@ -109,6 +111,7 @@ class FlareOTF(Calculator):
         self.descriptors = np.atleast_1d(descriptors)
         self.rcut = rcut
         self.type2number = type2number
+        self.type2numberase = type2numberase
         self.ntypes = len(self.type2number)
         self.energy_correction = np.atleast_1d(energy_correction)
         assert len(self.energy_correction) == self.ntypes
@@ -150,7 +153,8 @@ class FlareOTF(Calculator):
             self,
             cell,
             x,
-            types,
+            types_ase,
+            types_flare,
             step,
             structure,
             natoms
@@ -158,7 +162,7 @@ class FlareOTF(Calculator):
         E, F, S = None, None, None
         if self.dft_calls == 0:
             self.logger.info("Initial step, calling DFT")
-            E, F, S = self.run_dft(cell, x, types, step, structure)
+            E, F, S = self.run_dft(cell, x, types_ase, types_flare, step, structure)
             t0 = time.time()
             self.sparse_gp.add_training_structure(structure)
             self.sparse_gp.add_random_environments(structure, [int(natoms/4)])
@@ -252,9 +256,11 @@ class FlareOTF(Calculator):
             cell = atoms.get_cell()
             types = atoms.numbers
             step = self.call
-            structure = Structure(cell, np.vectorize(self.type2number.get)(types), x, self.rcut, self.descriptors) # TODO: why subtract by 1
+            types_ase = types
+            types_flare = np.vectorize(self.type2numberase.get)(types)
+            structure = Structure(cell, types_flare, x, self.rcut, self.descriptors) # TODO: why subtract by 1
             
-            E, F, S = self.main_step(cell, x, types, step, structure, natoms)
+            E, F, S = self.main_step(cell, x, types_ase, types_flare, step, structure, natoms)
             if(E is None):
                 # no call to DFT
                 self.sparse_gp.predict_DTC(structure)
@@ -295,8 +301,10 @@ class FlareOTF(Calculator):
             cell[(2, 1)] = yz
             types = lmp.gather_atoms("type", 0, 1)
             types = np.ctypeslib.as_array(types, shape=natoms)
-            structure = Structure(cell, types - 1, x, self.rcut, self.descriptors)
-            E, F, S = self.main_step(cell, x, types, step, structure, natoms)
+            types_flare = types - 1
+            types_ase = self.type2number[types - 1]
+            structure = Structure(cell, types_flare, x, self.rcut, self.descriptors)
+            E, F, S = self.main_step(cell, x, types_ase, types_flare, step, structure, natoms)
 
             if(E is not None):
                 # called DFT
@@ -311,17 +319,17 @@ class FlareOTF(Calculator):
                 del err
 
 
-    def run_dft(self, cell, x, types, step, structure):
+    def run_dft(self, cell, x, types_ase, types_flare, step, structure):
         t0 = time.time()
         frame = ase.Atoms(
             positions=x,
-            numbers=types,
+            numbers=types_ase,
             cell=cell,
             calculator=(self.dftcalc),
             pbc=True,
         )
         E = frame.get_potential_energy()
-        E -= np.sum(self.energy_correction[np.vectorize(self.type2number.get)(types)])
+        E -= np.sum(self.energy_correction[types_flare])
         F = frame.get_forces()
         S = frame.get_stress(voigt=False)
         if self.dft_xyz_fname is not None:
